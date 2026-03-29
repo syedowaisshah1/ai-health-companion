@@ -1,56 +1,87 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Brain, MessageCircle, Send, Bot, Loader2 } from "lucide-react";
+import { Brain, MessageCircle, Send, Bot, Loader2, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { streamAI } from "@/lib/ai-stream";
+import { useToast } from "@/hooks/use-toast";
 
-const symptomDB: Record<string, string> = {
-  headache: "Possible causes: Tension headache, Migraine, Dehydration, Sinusitis. 💡 Recommendation: Rest, stay hydrated, and consult a doctor if it persists beyond 48 hours.",
-  fever: "Possible causes: Viral infection, Flu, COVID-19, Bacterial infection. 💡 Recommendation: Monitor temperature, take paracetamol, and visit a doctor if fever exceeds 102°F.",
-  cough: "Possible causes: Common cold, Bronchitis, Allergies, Asthma. 💡 Recommendation: Stay hydrated, use honey & warm fluids. See a doctor if cough lasts more than 2 weeks.",
-  "chest pain": "⚠️ This could be serious. Possible causes: Angina, GERD, Muscle strain, Heart attack. 💡 Recommendation: Seek immediate medical attention.",
-  "stomach pain": "Possible causes: Gastritis, Food poisoning, IBS, Appendicitis. 💡 Recommendation: Avoid spicy food, stay hydrated, and consult a doctor if pain is severe.",
-  fatigue: "Possible causes: Anemia, Thyroid issues, Sleep disorder, Stress. 💡 Recommendation: Ensure adequate sleep, balanced diet, and get blood tests done.",
-};
+type Msg = { role: "user" | "assistant"; content: string };
 
 const AIToolsSection = () => {
+  const { toast } = useToast();
+
+  // Symptom checker state
   const [symptoms, setSymptoms] = useState("");
   const [result, setResult] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
 
-  const [chatMessages, setChatMessages] = useState<{ role: "user" | "bot"; text: string }[]>([
-    { role: "bot", text: "Hello! 👋 I'm your AI health assistant. How can I help you today?" },
+  // Chatbot state
+  const [chatMessages, setChatMessages] = useState<Msg[]>([
+    { role: "assistant", content: "Hello! 👋 I'm your AI health assistant at MediCare AI. How can I help you today?" },
   ]);
   const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const checkSymptoms = () => {
-    if (!symptoms.trim()) return;
-    setLoading(true);
-    setTimeout(() => {
-      const lower = symptoms.toLowerCase();
-      const match = Object.entries(symptomDB).find(([key]) => lower.includes(key));
-      setResult(match ? match[1] : "Based on your symptoms, we recommend scheduling a consultation with one of our specialists for a thorough examination. Our AI couldn't identify a specific condition — a doctor can provide accurate diagnosis.");
-      setLoading(false);
-    }, 1500);
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  const checkSymptoms = async () => {
+    if (!symptoms.trim() || analyzing) return;
+    setAnalyzing(true);
+    setResult("");
+
+    let accumulated = "";
+    try {
+      await streamAI({
+        messages: [{ role: "user", content: symptoms }],
+        mode: "symptom",
+        onDelta: (chunk) => {
+          accumulated += chunk;
+          setResult(accumulated);
+        },
+        onDone: () => setAnalyzing(false),
+      });
+    } catch {
+      toast({ title: "AI service unavailable", description: "Please try again later.", variant: "destructive" });
+      setAnalyzing(false);
+    }
   };
 
-  const sendChat = () => {
-    if (!chatInput.trim()) return;
-    const userMsg = chatInput;
-    setChatMessages((m) => [...m, { role: "user", text: userMsg }]);
+  const sendChat = async () => {
+    if (!chatInput.trim() || chatLoading) return;
+    const userMsg: Msg = { role: "user", content: chatInput };
+    const updatedMsgs = [...chatMessages, userMsg];
+    setChatMessages(updatedMsgs);
     setChatInput("");
+    setChatLoading(true);
 
-    setTimeout(() => {
-      const lower = userMsg.toLowerCase();
-      let reply = "Thank you for your question! For accurate medical advice, I recommend booking an appointment with our specialists. Is there anything else I can help with?";
-      if (lower.includes("appointment") || lower.includes("book")) reply = "You can book an appointment right below in the booking section! We have slots available this week. 📅";
-      else if (lower.includes("hour") || lower.includes("timing") || lower.includes("open")) reply = "Our clinic is open Mon–Sat, 8:00 AM to 8:00 PM. Emergency services are available 24/7! 🏥";
-      else if (lower.includes("location") || lower.includes("address") || lower.includes("where")) reply = "We're located at 123 Healthcare Avenue, Medical District. You can find us on the map in the contact section below! 📍";
-      const match = Object.entries(symptomDB).find(([key]) => lower.includes(key));
-      if (match) reply = match[1];
-      setChatMessages((m) => [...m, { role: "bot", text: reply }]);
-    }, 1000);
+    let assistantSoFar = "";
+    const upsert = (chunk: string) => {
+      assistantSoFar += chunk;
+      setChatMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "assistant" && prev.length === updatedMsgs.length + 1) {
+          return prev.map((m, i) => (i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
+        }
+        return [...prev, { role: "assistant", content: assistantSoFar }];
+      });
+    };
+
+    try {
+      await streamAI({
+        messages: updatedMsgs,
+        mode: "chat",
+        onDelta: upsert,
+        onDone: () => setChatLoading(false),
+      });
+    } catch {
+      setChatMessages((prev) => [...prev, { role: "assistant", content: "Sorry, I'm having trouble connecting right now. Please try again or call us at +92 300 1234567." }]);
+      setChatLoading(false);
+    }
   };
 
   return (
@@ -64,7 +95,7 @@ const AIToolsSection = () => {
         >
           <span className="text-primary font-semibold text-sm uppercase tracking-wide">AI-Powered</span>
           <h2 className="text-3xl md:text-4xl font-bold mt-2 mb-4">Smart Health Tools</h2>
-          <p className="text-muted-foreground text-lg">Use our AI tools for quick symptom analysis and 24/7 chat support.</p>
+          <p className="text-muted-foreground text-lg">Powered by advanced AI for instant symptom analysis and 24/7 chat support.</p>
         </motion.div>
 
         <div className="grid lg:grid-cols-2 gap-8">
@@ -81,16 +112,16 @@ const AIToolsSection = () => {
               </div>
               <h3 className="font-heading font-bold text-xl">AI Symptom Checker</h3>
             </div>
-            <p className="text-muted-foreground text-sm mb-4">Describe your symptoms below and our AI will suggest possible conditions.</p>
+            <p className="text-muted-foreground text-sm mb-4">Describe your symptoms and our AI will analyze possible conditions.</p>
             <Textarea
               placeholder="E.g., I have a headache and mild fever since 2 days..."
               value={symptoms}
               onChange={(e) => setSymptoms(e.target.value)}
               className="mb-4 min-h-[100px]"
             />
-            <Button onClick={checkSymptoms} disabled={loading} className="w-full">
-              {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Brain className="w-4 h-4 mr-2" />}
-              Analyze Symptoms
+            <Button onClick={checkSymptoms} disabled={analyzing} className="w-full">
+              {analyzing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Brain className="w-4 h-4 mr-2" />}
+              {analyzing ? "Analyzing..." : "Analyze Symptoms"}
             </Button>
 
             <AnimatePresence>
@@ -99,10 +130,10 @@ const AIToolsSection = () => {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="mt-4 p-4 rounded-xl bg-primary/5 border border-primary/20"
+                  className="mt-4 p-4 rounded-xl bg-primary/5 border border-primary/20 max-h-[300px] overflow-y-auto"
                 >
-                  <p className="text-sm leading-relaxed">{result}</p>
-                  <p className="text-xs text-muted-foreground mt-3">⚠️ This is not a medical diagnosis. Please consult a doctor.</p>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{result}</p>
+                  {!analyzing && <p className="text-xs text-muted-foreground mt-3">⚠️ This is not a medical diagnosis. Please consult a doctor.</p>}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -122,20 +153,40 @@ const AIToolsSection = () => {
               <div>
                 <h3 className="font-heading font-bold text-xl">AI Health Assistant</h3>
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-accent animate-pulse-soft" /> Online 24/7
+                  <span className="w-2 h-2 rounded-full bg-accent animate-pulse-soft" /> Powered by AI • Online 24/7
                 </p>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4 max-h-[350px]">
               {chatMessages.map((m, i) => (
-                <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm ${m.role === "user" ? "gradient-primary text-primary-foreground rounded-br-md" : "bg-secondary rounded-bl-md"}`}>
-                    {m.role === "bot" && <Bot className="w-4 h-4 mb-1 text-primary inline mr-1" />}
-                    {m.text}
+                <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} gap-2`}>
+                  {m.role === "assistant" && (
+                    <div className="w-7 h-7 rounded-full gradient-primary flex items-center justify-center shrink-0 mt-1">
+                      <Bot className="w-4 h-4 text-primary-foreground" />
+                    </div>
+                  )}
+                  <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap ${m.role === "user" ? "gradient-primary text-primary-foreground rounded-br-md" : "bg-secondary rounded-bl-md"}`}>
+                    {m.content}
                   </div>
+                  {m.role === "user" && (
+                    <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0 mt-1">
+                      <User className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  )}
                 </div>
               ))}
+              {chatLoading && chatMessages[chatMessages.length - 1]?.role === "user" && (
+                <div className="flex gap-2">
+                  <div className="w-7 h-7 rounded-full gradient-primary flex items-center justify-center shrink-0">
+                    <Bot className="w-4 h-4 text-primary-foreground" />
+                  </div>
+                  <div className="px-4 py-2.5 rounded-2xl bg-secondary rounded-bl-md">
+                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
             </div>
 
             <div className="p-4 border-t border-border flex gap-2">
@@ -143,9 +194,10 @@ const AIToolsSection = () => {
                 placeholder="Ask me anything about health..."
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && sendChat()}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendChat()}
+                disabled={chatLoading}
               />
-              <Button size="icon" onClick={sendChat}>
+              <Button size="icon" onClick={sendChat} disabled={chatLoading}>
                 <Send className="w-4 h-4" />
               </Button>
             </div>
