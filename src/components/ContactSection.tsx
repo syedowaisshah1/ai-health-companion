@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { MapPin, Phone, Mail, Clock } from "lucide-react";
+import { MapPin, Phone, Mail, Clock, ArrowUpRight } from "lucide-react";
 
 const info = [
   { icon: MapPin, label: "Address", value: "123 Healthcare Avenue, Medical District, City 54000" },
@@ -9,17 +9,21 @@ const info = [
 ];
 
 const ContactSection = () => (
-  <section id="contact" className="py-24">
+  <section id="contact" className="py-28 relative overflow-hidden">
+    <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
+
     <div className="container">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
-        className="text-center max-w-2xl mx-auto mb-16"
+        className="text-center max-w-2xl mx-auto mb-20"
       >
-        <span className="text-primary font-semibold text-sm uppercase tracking-wide">Contact</span>
-        <h2 className="text-3xl md:text-4xl font-bold mt-2 mb-4">Get In Touch</h2>
-        <p className="text-muted-foreground text-lg">Have questions? Reach out to us anytime.</p>
+        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase bg-primary/10 text-primary mb-4">Contact</span>
+        <h2 className="text-3xl md:text-5xl font-extrabold mt-2 mb-5 tracking-tight">
+          Get In <span className="text-gradient">Touch</span>
+        </h2>
+        <p className="text-muted-foreground text-lg leading-relaxed">Have questions? Reach out to us anytime.</p>
       </motion.div>
 
       <div className="grid lg:grid-cols-2 gap-8">
@@ -27,18 +31,26 @@ const ContactSection = () => (
           initial={{ opacity: 0, x: -20 }}
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true }}
-          className="space-y-6"
+          className="space-y-5"
         >
-          {info.map((item) => (
-            <div key={item.label} className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center shrink-0">
+          {info.map((item, i) => (
+            <motion.div
+              key={item.label}
+              initial={{ opacity: 0, x: -10 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.1 }}
+              className="group flex items-start gap-4 p-5 rounded-2xl bg-card border border-border/50 shadow-soft hover:shadow-hover hover:-translate-y-0.5 transition-all duration-300"
+            >
+              <div className="w-12 h-12 rounded-xl gradient-primary flex items-center justify-center shrink-0 shadow-glow/30">
                 <item.icon className="w-5 h-5 text-primary-foreground" />
               </div>
-              <div>
-                <h4 className="font-heading font-bold">{item.label}</h4>
-                <p className="text-muted-foreground text-sm">{item.value}</p>
+              <div className="flex-1">
+                <h4 className="font-heading font-bold text-sm uppercase tracking-wide text-muted-foreground mb-1">{item.label}</h4>
+                <p className="text-foreground font-medium text-sm">{item.value}</p>
               </div>
-            </div>
+              <ArrowUpRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-primary transition-colors shrink-0 mt-1" />
+            </motion.div>
           ))}
         </motion.div>
 
@@ -46,7 +58,7 @@ const ContactSection = () => (
           initial={{ opacity: 0, x: 20 }}
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true }}
-          className="rounded-2xl overflow-hidden shadow-card border border-border h-[350px]"
+          className="rounded-2xl overflow-hidden shadow-card border border-border/50 h-[380px]"
         >
           <iframe
             title="MediCare AI Location"
